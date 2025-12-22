@@ -1,0 +1,18 @@
+<Window x:Class="SnapMark.UI.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Grid Padding="20" Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+        <StackPanel>
+            <TextBlock Text="SnapMark" FontSize="24" FontWeight="Bold" Margin="0,0,0,20"/>
+            <TextBlock Text="SnapMark is running!" Margin="0,0,0,10"/>
+            <TextBlock Text="Use these hotkeys:" Margin="0,0,0,10"/>
+            <TextBlock Text="Win+Shift+S - Region Capture" Margin="10,0,0,5"/>
+            <TextBlock Text="Win+Shift+F - Full Screen Capture" Margin="10,0,0,5"/>
+            <TextBlock Text="Win+Shift+W - Active Window Capture" Margin="10,0,0,5"/>
+            <Button x:Name="TestCaptureButton" Content="Test Full Screen Capture" Margin="0,20,0,0" Click="TestCaptureButton_Click"/>
+            <Button x:Name="QuitButton" Content="Quit" Margin="0,10,0,0" Click="QuitButton_Click"/>
+            <TextBlock x:Name="StatusText" Text="" Margin="0,10,0,0" Foreground="Gray"/>
+        </StackPanel>
+    </Grid>
+</Window>
+

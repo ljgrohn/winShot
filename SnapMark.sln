@@ -1,0 +1,40 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SnapMark.Core", "SnapMark.Core\SnapMark.Core.csproj", "{AA1B8E85-EB01-441A-AAA3-A8C392573CC7}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SnapMark.Capture", "SnapMark.Capture\SnapMark.Capture.csproj", "{773DFCEE-4DD1-4F6C-851D-B64198CDAD04}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SnapMark.Editor", "SnapMark.Editor\SnapMark.Editor.csproj", "{4F75FC3E-B552-4914-9113-DD750631566A}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SnapMark.UI", "SnapMark.UI\SnapMark.UI.csproj", "{4D616006-0500-4551-BD2B-1E94E08CC87A}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{AA1B8E85-EB01-441A-AAA3-A8C392573CC7}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{AA1B8E85-EB01-441A-AAA3-A8C392573CC7}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{AA1B8E85-EB01-441A-AAA3-A8C392573CC7}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{AA1B8E85-EB01-441A-AAA3-A8C392573CC7}.Release|Any CPU.Build.0 = Release|Any CPU
+		{773DFCEE-4DD1-4F6C-851D-B64198CDAD04}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{773DFCEE-4DD1-4F6C-851D-B64198CDAD04}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{773DFCEE-4DD1-4F6C-851D-B64198CDAD04}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{773DFCEE-4DD1-4F6C-851D-B64198CDAD04}.Release|Any CPU.Build.0 = Release|Any CPU
+		{4F75FC3E-B552-4914-9113-DD750631566A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{4F75FC3E-B552-4914-9113-DD750631566A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{4F75FC3E-B552-4914-9113-DD750631566A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{4F75FC3E-B552-4914-9113-DD750631566A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{4D616006-0500-4551-BD2B-1E94E08CC87A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{4D616006-0500-4551-BD2B-1E94E08CC87A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{4D616006-0500-4551-BD2B-1E94E08CC87A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{4D616006-0500-4551-BD2B-1E94E08CC87A}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal
