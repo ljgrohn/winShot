@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
     <Grid Padding="20" Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
         <StackPanel>
-            <TextBlock Text="SnapMark" FontSize="24" FontWeight="Bold" Margin="0,0,0,20"/>
+            <TextBlock Text="SnapMark" FontSize="32" FontWeight="Bold" Margin="0,0,0,20" Foreground="{ThemeResource SystemControlForegroundBaseHighBrush}"/>
             <TextBlock Text="SnapMark is running!" Margin="0,0,0,10"/>
             <TextBlock Text="Use these hotkeys:" Margin="0,0,0,10"/>
             <TextBlock Text="Win+Shift+S - Region Capture" Margin="10,0,0,5"/>

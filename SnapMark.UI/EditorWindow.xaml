@@ -7,7 +7,7 @@
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <Border Grid.Row="0" Background="LightGray">
+        <Border Grid.Row="0" Background="#1a1a1a">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
@@ -15,30 +15,70 @@
                 </Grid.ColumnDefinitions>
                 
                 <StackPanel Grid.Column="0" Orientation="Horizontal" Padding="10">
-                    <Button x:Name="HandToolButton" Content="Hand" Margin="5" Click="HandToolButton_Click"/>
-                    <Button x:Name="ArrowToolButton" Content="Arrow" Margin="5" Click="ArrowToolButton_Click"/>
-                    <Button x:Name="RectangleToolButton" Content="Rectangle" Margin="5" Click="RectangleToolButton_Click"/>
-                    <Button x:Name="LineToolButton" Content="Line" Margin="5" Click="LineToolButton_Click"/>
-                    <Button x:Name="TextToolButton" Content="Text" Margin="5" Click="TextToolButton_Click"/>
-                    <Button x:Name="CopyButton" Content="Copy" Margin="5" Click="CopyButton_Click"/>
-                    <Button x:Name="SaveButton" Content="Save" Margin="5" Click="SaveButton_Click"/>
+                    <Button x:Name="SelectorToolButton" Content="Select" Margin="5" Click="SelectorToolButton_Click" FontSize="14" FontWeight="SemiBold">
+                        <Button.Foreground>
+                            <SolidColorBrush Color="#FFFFFF"/>
+                        </Button.Foreground>
+                    </Button>
+                    <Button x:Name="HandToolButton" Content="Hand" Margin="5" Click="HandToolButton_Click" FontSize="14" FontWeight="SemiBold">
+                        <Button.Foreground>
+                            <SolidColorBrush Color="#FFFFFF"/>
+                        </Button.Foreground>
+                    </Button>
+                    <Button x:Name="ArrowToolButton" Content="Arrow" Margin="5" Click="ArrowToolButton_Click" FontSize="14" FontWeight="SemiBold">
+                        <Button.Foreground>
+                            <SolidColorBrush Color="#FFFFFF"/>
+                        </Button.Foreground>
+                    </Button>
+                    <Button x:Name="RectangleToolButton" Content="Rectangle" Margin="5" Click="RectangleToolButton_Click" FontSize="14" FontWeight="SemiBold">
+                        <Button.Foreground>
+                            <SolidColorBrush Color="#FFFFFF"/>
+                        </Button.Foreground>
+                    </Button>
+                    <Button x:Name="LineToolButton" Content="Line" Margin="5" Click="LineToolButton_Click" FontSize="14" FontWeight="SemiBold">
+                        <Button.Foreground>
+                            <SolidColorBrush Color="#FFFFFF"/>
+                        </Button.Foreground>
+                    </Button>
+                    <Button x:Name="TextToolButton" Content="Text" Margin="5" Click="TextToolButton_Click" FontSize="14" FontWeight="SemiBold">
+                        <Button.Foreground>
+                            <SolidColorBrush Color="#FFFFFF"/>
+                        </Button.Foreground>
+                    </Button>
+                    <Button x:Name="CopyButton" Content="Copy" Margin="5" Click="CopyButton_Click" FontSize="14" FontWeight="SemiBold">
+                        <Button.Foreground>
+                            <SolidColorBrush Color="#FFFFFF"/>
+                        </Button.Foreground>
+                    </Button>
+                    <Button x:Name="SaveButton" Content="Save" Margin="5" Click="SaveButton_Click" FontSize="14" FontWeight="SemiBold">
+                        <Button.Foreground>
+                            <SolidColorBrush Color="#FFFFFF"/>
+                        </Button.Foreground>
+                    </Button>
                 </StackPanel>
                 
                 <StackPanel x:Name="PropertyPanel" Grid.Column="1" Orientation="Horizontal" Padding="10" Visibility="Collapsed">
-                    <TextBlock Text="Color:" VerticalAlignment="Center" Margin="5,0"/>
+                    <TextBlock Text="Color:" VerticalAlignment="Center" Margin="5,0" Foreground="#FFFFFF" FontSize="14" FontWeight="SemiBold"/>
                     <Button x:Name="ColorPickerButton" Width="40" Height="30" Margin="5,0" Click="ColorPickerButton_Click">
                         <Button.Background>
                             <SolidColorBrush x:Name="ColorSwatch" Color="Red"/>
                         </Button.Background>
                     </Button>
-                    <TextBlock Text="Width:" VerticalAlignment="Center" Margin="10,0,5,0"/>
+                    <TextBlock Text="Width:" VerticalAlignment="Center" Margin="10,0,5,0" Foreground="#FFFFFF" FontSize="14" FontWeight="SemiBold"/>
                     <Slider x:Name="StrokeWidthSlider" Width="100" Minimum="1" Maximum="20" Value="2" ValueChanged="StrokeWidthSlider_ValueChanged" VerticalAlignment="Center" Margin="5,0"/>
-                    <TextBlock x:Name="StrokeWidthText" Text="2" VerticalAlignment="Center" Margin="5,0"/>
+                    <TextBlock x:Name="StrokeWidthText" Text="2" VerticalAlignment="Center" Margin="5,0" Foreground="#FFFFFF" FontSize="14" FontWeight="SemiBold"/>
                 </StackPanel>
             </Grid>
         </Border>
 
-        <ScrollViewer x:Name="ImageScrollViewer" Grid.Row="1" ZoomMode="Enabled" MinZoomFactor="0.1" MaxZoomFactor="5.0">
+        <ScrollViewer x:Name="ImageScrollViewer" Grid.Row="1" 
+                      ZoomMode="Enabled" 
+                      MinZoomFactor="0.1" 
+                      MaxZoomFactor="5.0"
+                      HorizontalScrollMode="Enabled"
+                      HorizontalScrollBarVisibility="Auto"
+                      VerticalScrollMode="Enabled"
+                      VerticalScrollBarVisibility="Auto">
             <Grid>
                 <Canvas x:Name="EditorCanvas" Background="Transparent">
                     <Image x:Name="BackgroundImage" Stretch="None"/>

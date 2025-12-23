@@ -42,6 +42,10 @@ public sealed partial class EditorWindow : Window
     private bool _isResizing = false;
     private ResizeHandle? _resizeHandle;
     private System.Drawing.Rectangle _resizeStartBounds;
+    
+    // Zoom state - prevent auto-centering when user zooms manually
+    private bool _isInitialFit = true;
+    private bool _isUserZooming = false;
 
     public EditorWindow()
     {
@@ -53,6 +57,9 @@ public sealed partial class EditorWindow : Window
         // Handle keyboard shortcuts via UIElement
         EditorCanvas.KeyDown += EditorWindow_KeyDown;
         AnnotationCanvas.KeyDown += EditorWindow_KeyDown;
+        
+        // Handle zoom events to preserve viewport position
+        ImageScrollViewer.ViewChanged += ImageScrollViewer_ViewChanged;
     }
 
     public void LoadCapture(CaptureResult captureResult)
@@ -79,6 +86,7 @@ public sealed partial class EditorWindow : Window
         AnnotationCanvas.Height = bitmap.Height;
         
         // Calculate and set initial zoom to fit the image in the viewport
+        _isInitialFit = true;
         FitImageToViewport();
         
         RedrawAnnotations();
@@ -93,14 +101,17 @@ public sealed partial class EditorWindow : Window
         layoutHandler = (s, e) =>
         {
             ImageScrollViewer.LayoutUpdated -= layoutHandler;
-            CalculateAndSetZoom();
+            if (_isInitialFit)
+            {
+                CalculateAndSetZoom();
+            }
         };
         ImageScrollViewer.LayoutUpdated += layoutHandler;
         
         // Also try immediately in case layout is already done
         this.DispatcherQueue.TryEnqueue(() =>
         {
-            if (ImageScrollViewer.ActualWidth > 0 && ImageScrollViewer.ActualHeight > 0)
+            if (ImageScrollViewer.ActualWidth > 0 && ImageScrollViewer.ActualHeight > 0 && _isInitialFit)
             {
                 CalculateAndSetZoom();
             }
@@ -132,13 +143,35 @@ public sealed partial class EditorWindow : Window
         // Clamp to reasonable bounds
         zoomFactor = Math.Max(0.1, Math.Min(1.0, zoomFactor));
         
-        ImageScrollViewer.ZoomToFactor((float)zoomFactor);
-        
-        // Center the image
-        ImageScrollViewer.ChangeView(
-            (bitmap.Width * zoomFactor - viewportWidth) / 2,
-            (bitmap.Height * zoomFactor - viewportHeight) / 2,
-            (float)zoomFactor);
+        // Only center on initial fit, not on user zoom
+        if (_isInitialFit)
+        {
+            ImageScrollViewer.ZoomToFactor((float)zoomFactor);
+            
+            // Center the image only on initial load
+            ImageScrollViewer.ChangeView(
+                (bitmap.Width * zoomFactor - viewportWidth) / 2,
+                (bitmap.Height * zoomFactor - viewportHeight) / 2,
+                (float)zoomFactor);
+            
+            _isInitialFit = false;
+        }
+    }
+    
+    private void ImageScrollViewer_ViewChanged(object? sender, Microsoft.UI.Xaml.Controls.ScrollViewerViewChangedEventArgs e)
+    {
+        // Mark that user is interacting with zoom/pan, so we don't auto-center
+        if (!e.IsIntermediate)
+        {
+            _isInitialFit = false;
+        }
+    }
+
+    private void SelectorToolButton_Click(object sender, RoutedEventArgs e)
+    {
+        _currentTool = AnnotationType.Selector;
+        UpdateToolButtons();
+        UpdateCursor();
     }
 
     private void HandToolButton_Click(object sender, RoutedEventArgs e)
@@ -179,6 +212,7 @@ public sealed partial class EditorWindow : Window
     private void UpdateToolButtons()
     {
         // Visual feedback - highlight active tool
+        SelectorToolButton.Style = _currentTool == AnnotationType.Selector ? GetHighlightedButtonStyle() : null;
         HandToolButton.Style = _currentTool == AnnotationType.Hand ? GetHighlightedButtonStyle() : null;
         ArrowToolButton.Style = _currentTool == AnnotationType.Arrow ? GetHighlightedButtonStyle() : null;
         RectangleToolButton.Style = _currentTool == AnnotationType.Rectangle ? GetHighlightedButtonStyle() : null;
@@ -334,6 +368,49 @@ public sealed partial class EditorWindow : Window
         _annotations.Clear();
     }
 
+    private void ImageScrollViewer_PointerPressed(object sender, PointerRoutedEventArgs e)
+    {
+        // Handle hand tool panning on ScrollViewer
+        if (_currentTool == AnnotationType.Hand)
+        {
+            var point = e.GetCurrentPoint(ImageScrollViewer).Position;
+            _isPanning = true;
+            _panStartPoint = point;
+            _panStartHorizontalOffset = ImageScrollViewer.HorizontalOffset;
+            _panStartVerticalOffset = ImageScrollViewer.VerticalOffset;
+            ImageScrollViewer.CapturePointer(e.Pointer);
+            e.Handled = true;
+        }
+    }
+
+    private void ImageScrollViewer_PointerMoved(object sender, PointerRoutedEventArgs e)
+    {
+        // Handle panning
+        if (_isPanning)
+        {
+            var currentPoint = e.GetCurrentPoint(ImageScrollViewer).Position;
+            var deltaX = _panStartPoint.X - currentPoint.X;
+            var deltaY = _panStartPoint.Y - currentPoint.Y;
+            
+            var newHorizontalOffset = _panStartHorizontalOffset + deltaX;
+            var newVerticalOffset = _panStartVerticalOffset + deltaY;
+            
+            ImageScrollViewer.ChangeView(newHorizontalOffset, newVerticalOffset, null);
+            e.Handled = true;
+        }
+    }
+
+    private void ImageScrollViewer_PointerReleased(object sender, PointerRoutedEventArgs e)
+    {
+        // Handle panning end
+        if (_isPanning)
+        {
+            _isPanning = false;
+            ImageScrollViewer.ReleasePointerCapture(e.Pointer);
+            e.Handled = true;
+        }
+    }
+
     private void ColorPickerButton_Click(object sender, RoutedEventArgs e)
     {
         if (_annotations.SelectedAnnotation == null) return;
@@ -427,14 +504,57 @@ public sealed partial class EditorWindow : Window
     {
         var point = e.GetCurrentPoint(AnnotationCanvas).Position;
         
-        // Handle hand tool panning
+        // Handle hand tool panning - pan the ScrollViewer
         if (_currentTool == AnnotationType.Hand)
         {
             _isPanning = true;
             _panStartPoint = point;
             _panStartHorizontalOffset = ImageScrollViewer.HorizontalOffset;
             _panStartVerticalOffset = ImageScrollViewer.VerticalOffset;
-            AnnotationCanvas.CapturePointer(e.Pointer);
+            ImageScrollViewer.CapturePointer(e.Pointer);
+            e.Handled = true;
+            return;
+        }
+        
+        // Handle selector tool or default selection mode
+        if (_currentTool == AnnotationType.Selector || _currentTool == AnnotationType.Hand)
+        {
+            var drawingPoint = WinUIToDrawingPoint(point);
+            var hitAnnotation = _annotations.HitTest(drawingPoint);
+            
+            if (hitAnnotation != null)
+            {
+                // Check if clicking on resize handle
+                var handle = GetResizeHandle(hitAnnotation, drawingPoint);
+                if (handle != ResizeHandle.None)
+                {
+                    _isResizing = true;
+                    _resizeHandle = handle;
+                    _resizeStartBounds = hitAnnotation.Bounds;
+                    _annotations.SelectAnnotation(hitAnnotation);
+                    UpdatePropertyPanel();
+                    AnnotationCanvas.CapturePointer(e.Pointer);
+                    return;
+                }
+                
+                // Start moving annotation
+                _isMoving = true;
+                _moveStartPoint = point;
+                _moveStartAnnotation = hitAnnotation;
+                _annotations.SelectAnnotation(hitAnnotation);
+                UpdatePropertyPanel();
+                AnnotationCanvas.CapturePointer(e.Pointer);
+                RedrawAnnotations();
+                return;
+            }
+            
+            // Clear selection if clicking on empty space
+            if (_annotations.SelectedAnnotation != null)
+            {
+                _annotations.ClearSelection();
+                UpdatePropertyPanel();
+                RedrawAnnotations();
+            }
             return;
         }
         
@@ -446,44 +566,7 @@ public sealed partial class EditorWindow : Window
             return;
         }
 
-        // Handle selection mode (when no drawing tool is active, or when clicking on existing annotation)
-        var drawingPoint = WinUIToDrawingPoint(point);
-        var hitAnnotation = _annotations.HitTest(drawingPoint);
-        
-        if (hitAnnotation != null)
-        {
-            // Check if clicking on resize handle
-            var handle = GetResizeHandle(hitAnnotation, drawingPoint);
-            if (handle != ResizeHandle.None)
-            {
-                _isResizing = true;
-                _resizeHandle = handle;
-                _resizeStartBounds = hitAnnotation.Bounds;
-                _annotations.SelectAnnotation(hitAnnotation);
-                UpdatePropertyPanel();
-                AnnotationCanvas.CapturePointer(e.Pointer);
-                return;
-            }
-            
-            // Start moving annotation
-            _isMoving = true;
-            _moveStartPoint = point;
-            _moveStartAnnotation = hitAnnotation;
-            _annotations.SelectAnnotation(hitAnnotation);
-            UpdatePropertyPanel();
-            AnnotationCanvas.CapturePointer(e.Pointer);
-            RedrawAnnotations();
-            return;
-        }
-        
-        // Clear selection if clicking on empty space
-        if (_annotations.SelectedAnnotation != null)
-        {
-            _annotations.ClearSelection();
-            UpdatePropertyPanel();
-            RedrawAnnotations();
-        }
-
+        // Handle drawing tools (Arrow, Rectangle, Line)
         // Start drawing new annotation
         _isDrawing = true;
         _dragStart = point;
@@ -494,7 +577,7 @@ public sealed partial class EditorWindow : Window
     {
         var currentPoint = e.GetCurrentPoint(AnnotationCanvas).Position;
         
-        // Handle panning
+        // Handle panning - this should be handled by ScrollViewer, not AnnotationCanvas
         if (_isPanning)
         {
             var deltaX = _panStartPoint.X - currentPoint.X;
@@ -551,7 +634,7 @@ public sealed partial class EditorWindow : Window
         if (_isPanning)
         {
             _isPanning = false;
-            AnnotationCanvas.ReleasePointerCapture(e.Pointer);
+            ImageScrollViewer.ReleasePointerCapture(e.Pointer);
             return;
         }
         
@@ -1154,6 +1237,7 @@ public sealed partial class EditorWindow : Window
 
 enum AnnotationType
 {
+    Selector,
     Hand,
     Arrow,
     Rectangle,
