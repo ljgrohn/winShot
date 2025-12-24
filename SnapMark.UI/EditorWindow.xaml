@@ -78,7 +78,12 @@
                       HorizontalScrollMode="Enabled"
                       HorizontalScrollBarVisibility="Auto"
                       VerticalScrollMode="Enabled"
-                      VerticalScrollBarVisibility="Auto">
+                      VerticalScrollBarVisibility="Auto"
+                      PointerPressed="ImageScrollViewer_PointerPressed"
+                      PointerMoved="ImageScrollViewer_PointerMoved"
+                      PointerReleased="ImageScrollViewer_PointerReleased"
+                      PointerEntered="ImageScrollViewer_PointerEntered"
+                      PointerExited="ImageScrollViewer_PointerExited">
             <Grid>
                 <Canvas x:Name="EditorCanvas" Background="Transparent">
                     <Image x:Name="BackgroundImage" Stretch="None"/>

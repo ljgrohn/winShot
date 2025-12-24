@@ -381,12 +381,17 @@ public sealed partial class EditorWindow : Window
             ImageScrollViewer.CapturePointer(e.Pointer);
             e.Handled = true;
         }
+        else
+        {
+            // For other tools, don't capture - let child elements handle it
+            e.Handled = false;
+        }
     }
 
     private void ImageScrollViewer_PointerMoved(object sender, PointerRoutedEventArgs e)
     {
         // Handle panning
-        if (_isPanning)
+        if (_isPanning && _currentTool == AnnotationType.Hand)
         {
             var currentPoint = e.GetCurrentPoint(ImageScrollViewer).Position;
             var deltaX = _panStartPoint.X - currentPoint.X;
@@ -398,16 +403,55 @@ public sealed partial class EditorWindow : Window
             ImageScrollViewer.ChangeView(newHorizontalOffset, newVerticalOffset, null);
             e.Handled = true;
         }
+        else
+        {
+            e.Handled = false;
+        }
     }
 
     private void ImageScrollViewer_PointerReleased(object sender, PointerRoutedEventArgs e)
     {
-        // Handle panning end
-        if (_isPanning)
+        // Handle panning end (for clicks directly on ScrollViewer, not on child elements)
+        if (_isPanning && _currentTool == AnnotationType.Hand)
         {
             _isPanning = false;
             ImageScrollViewer.ReleasePointerCapture(e.Pointer);
             e.Handled = true;
+        }
+        else
+        {
+            e.Handled = false;
+        }
+    }
+    
+    private void ImageScrollViewer_PointerEntered(object sender, PointerRoutedEventArgs e)
+    {
+        // Update cursor when hand tool is active
+        if (_currentTool == AnnotationType.Hand)
+        {
+            // Set hand cursor - WinUI 3 uses ProtectedCursor
+            try
+            {
+                var cursor = Microsoft.UI.Input.InputSystemCursor.Create(Microsoft.UI.Input.InputSystemCursorShape.Hand);
+                ImageScrollViewer.ProtectedCursor = cursor;
+            }
+            catch
+            {
+                // Fallback if ProtectedCursor is not available
+            }
+        }
+    }
+    
+    private void ImageScrollViewer_PointerExited(object sender, PointerRoutedEventArgs e)
+    {
+        // Reset cursor when leaving ScrollViewer
+        try
+        {
+            ImageScrollViewer.ProtectedCursor = null;
+        }
+        catch
+        {
+            // Ignore if ProtectedCursor is not available
         }
     }
 
@@ -502,22 +546,24 @@ public sealed partial class EditorWindow : Window
 
     private void AnnotationCanvas_PointerPressed(object sender, PointerRoutedEventArgs e)
     {
-        var point = e.GetCurrentPoint(AnnotationCanvas).Position;
-        
-        // Handle hand tool panning - pan the ScrollViewer
+        // Handle hand tool panning - need to handle here because AnnotationCanvas captures events
         if (_currentTool == AnnotationType.Hand)
         {
+            // Get point relative to ScrollViewer for panning
+            var scrollViewerPoint = e.GetCurrentPoint(ImageScrollViewer).Position;
             _isPanning = true;
-            _panStartPoint = point;
+            _panStartPoint = scrollViewerPoint;
             _panStartHorizontalOffset = ImageScrollViewer.HorizontalOffset;
             _panStartVerticalOffset = ImageScrollViewer.VerticalOffset;
-            ImageScrollViewer.CapturePointer(e.Pointer);
+            AnnotationCanvas.CapturePointer(e.Pointer);
             e.Handled = true;
             return;
         }
         
+        var point = e.GetCurrentPoint(AnnotationCanvas).Position;
+        
         // Handle selector tool or default selection mode
-        if (_currentTool == AnnotationType.Selector || _currentTool == AnnotationType.Hand)
+        if (_currentTool == AnnotationType.Selector)
         {
             var drawingPoint = WinUIToDrawingPoint(point);
             var hitAnnotation = _annotations.HitTest(drawingPoint);
@@ -575,20 +621,23 @@ public sealed partial class EditorWindow : Window
 
     private void AnnotationCanvas_PointerMoved(object sender, PointerRoutedEventArgs e)
     {
-        var currentPoint = e.GetCurrentPoint(AnnotationCanvas).Position;
-        
-        // Handle panning - this should be handled by ScrollViewer, not AnnotationCanvas
-        if (_isPanning)
+        // Handle panning when hand tool is active
+        if (_isPanning && _currentTool == AnnotationType.Hand)
         {
-            var deltaX = _panStartPoint.X - currentPoint.X;
-            var deltaY = _panStartPoint.Y - currentPoint.Y;
+            // Get point relative to ScrollViewer for panning
+            var currentScrollViewerPoint = e.GetCurrentPoint(ImageScrollViewer).Position;
+            var deltaX = _panStartPoint.X - currentScrollViewerPoint.X;
+            var deltaY = _panStartPoint.Y - currentScrollViewerPoint.Y;
             
             var newHorizontalOffset = _panStartHorizontalOffset + deltaX;
             var newVerticalOffset = _panStartVerticalOffset + deltaY;
             
             ImageScrollViewer.ChangeView(newHorizontalOffset, newVerticalOffset, null);
+            e.Handled = true;
             return;
         }
+        
+        var currentPoint = e.GetCurrentPoint(AnnotationCanvas).Position;
         
         // Handle resizing
         if (_isResizing && _moveStartAnnotation != null && _resizeHandle.HasValue)
@@ -631,10 +680,11 @@ public sealed partial class EditorWindow : Window
     private void AnnotationCanvas_PointerReleased(object sender, PointerRoutedEventArgs e)
     {
         // Handle panning end
-        if (_isPanning)
+        if (_isPanning && _currentTool == AnnotationType.Hand)
         {
             _isPanning = false;
-            ImageScrollViewer.ReleasePointerCapture(e.Pointer);
+            AnnotationCanvas.ReleasePointerCapture(e.Pointer);
+            e.Handled = true;
             return;
         }
         
