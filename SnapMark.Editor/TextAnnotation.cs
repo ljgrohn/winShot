@@ -1,4 +1,5 @@
 using System.Drawing;
+using System.Drawing.Drawing2D;
 
 namespace SnapMark.Editor;
 
@@ -16,19 +17,55 @@ public class TextAnnotation : AnnotationBase
 
     public override void Draw(Graphics graphics)
     {
+        // Calculate text size to determine padding
+        var textSize = graphics.MeasureString(Text, Font);
+        var textWidth = textSize.Width;
+        var textHeight = textSize.Height;
+        
+        // Calculate padding: 4% left/right, 3% top/bottom
+        var horizontalPadding = (int)(textWidth * 0.04);
+        var topPadding = (int)(textHeight * 0.03);
+        var bottomPadding = topPadding;
+        
+        // Calculate text rectangle within bounds with padding
+        var textRect = new Rectangle(
+            Bounds.X + horizontalPadding,
+            Bounds.Y + topPadding,
+            Bounds.Width - (horizontalPadding * 2),
+            Bounds.Height - topPadding - bottomPadding);
+        
+        // Draw rounded rectangle background
+        var backgroundColor = isBlack ? System.Drawing.Color.White : System.Drawing.Color.FromArgb(0x1a, 0x1a, 0x1a);
+        using var backgroundBrush = new SolidBrush(backgroundColor);
+        var cornerRadius = 4;
+        DrawRoundedRectangle(graphics, backgroundBrush, Bounds, cornerRadius);
+        
+        // Draw text centered
         using var brush = new SolidBrush(Color);
         using var stringFormat = new StringFormat
         {
-            Alignment = HorizontalAlignment,
-            LineAlignment = VerticalAlignment
+            Alignment = StringAlignment.Center,
+            LineAlignment = StringAlignment.Center
         };
-
-        graphics.DrawString(Text, Font, brush, Bounds, stringFormat);
+        graphics.DrawString(Text, Font, brush, textRect, stringFormat);
 
         if (IsSelected)
         {
             DrawSelectionHandles(graphics);
         }
+    }
+    
+    private bool isBlack => Color.R == 0 && Color.G == 0 && Color.B == 0;
+    
+    private void DrawRoundedRectangle(Graphics graphics, Brush brush, Rectangle rect, int radius)
+    {
+        using var path = new System.Drawing.Drawing2D.GraphicsPath();
+        path.AddArc(rect.X, rect.Y, radius * 2, radius * 2, 180, 90); // Top-left
+        path.AddArc(rect.Right - radius * 2, rect.Y, radius * 2, radius * 2, 270, 90); // Top-right
+        path.AddArc(rect.Right - radius * 2, rect.Bottom - radius * 2, radius * 2, radius * 2, 0, 90); // Bottom-right
+        path.AddArc(rect.X, rect.Bottom - radius * 2, radius * 2, radius * 2, 90, 90); // Bottom-left
+        path.CloseFigure();
+        graphics.FillPath(brush, path);
     }
 
     private void DrawSelectionHandles(Graphics graphics)
@@ -50,7 +87,17 @@ public class TextAnnotation : AnnotationBase
     public void UpdateBoundsFromText(Graphics graphics)
     {
         var size = graphics.MeasureString(Text, Font);
-        Bounds = new Rectangle(Bounds.Location, new Size((int)size.Width + 10, (int)size.Height + 10));
+        // Calculate padding: 4% on left/right, 3% on top/bottom
+        // Padding is calculated from actual text size, then bounds = text size + padding
+        var horizontalPadding = (int)(size.Width * 0.04);
+        var topPadding = (int)(size.Height * 0.03);
+        var bottomPadding = topPadding; // Use same padding for bottom
+        
+        Bounds = new Rectangle(
+            Bounds.Location, 
+            new Size(
+                (int)size.Width + (horizontalPadding * 2), 
+                (int)size.Height + topPadding + bottomPadding));
     }
 }
 

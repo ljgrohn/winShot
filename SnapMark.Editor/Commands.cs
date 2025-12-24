@@ -144,4 +144,60 @@ public class ChangeStrokeWidthCommand : ICommand
     }
 }
 
+public class ChangeFontSizeCommand : ICommand
+{
+    private readonly TextAnnotation _annotation;
+    private readonly float _newSize;
+    private float _oldSize;
+
+    public ChangeFontSizeCommand(TextAnnotation annotation, float newSize)
+    {
+        _annotation = annotation;
+        _newSize = newSize;
+        _oldSize = annotation.Font.Size;
+    }
+
+    public void Execute()
+    {
+        var oldFont = _annotation.Font;
+        _annotation.Font = new Font(oldFont.FontFamily, _newSize, oldFont.Style);
+        oldFont.Dispose();
+    }
+
+    public void Undo()
+    {
+        var currentFont = _annotation.Font;
+        _annotation.Font = new Font(currentFont.FontFamily, _oldSize, currentFont.Style);
+        currentFont.Dispose();
+    }
+}
+
+public class ChangeFontCommand : ICommand
+{
+    private readonly TextAnnotation _annotation;
+    private readonly FontFamily _newFontFamily;
+    private FontFamily _oldFontFamily;
+
+    public ChangeFontCommand(TextAnnotation annotation, FontFamily newFontFamily)
+    {
+        _annotation = annotation;
+        _newFontFamily = newFontFamily;
+        _oldFontFamily = annotation.Font.FontFamily;
+    }
+
+    public void Execute()
+    {
+        var oldFont = _annotation.Font;
+        _annotation.Font = new Font(_newFontFamily, oldFont.Size, oldFont.Style);
+        oldFont.Dispose();
+    }
+
+    public void Undo()
+    {
+        var currentFont = _annotation.Font;
+        _annotation.Font = new Font(_oldFontFamily, currentFont.Size, currentFont.Style);
+        currentFont.Dispose();
+    }
+}
+
 

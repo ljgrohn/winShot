@@ -64,9 +64,14 @@
                             <SolidColorBrush x:Name="ColorSwatch" Color="Red"/>
                         </Button.Background>
                     </Button>
-                    <TextBlock Text="Width:" VerticalAlignment="Center" Margin="10,0,5,0" Foreground="#FFFFFF" FontSize="14" FontWeight="SemiBold"/>
+                    <TextBlock x:Name="StrokeWidthLabel" Text="Width:" VerticalAlignment="Center" Margin="10,0,5,0" Foreground="#FFFFFF" FontSize="14" FontWeight="SemiBold"/>
                     <Slider x:Name="StrokeWidthSlider" Width="100" Minimum="1" Maximum="20" Value="2" ValueChanged="StrokeWidthSlider_ValueChanged" VerticalAlignment="Center" Margin="5,0"/>
                     <TextBlock x:Name="StrokeWidthText" Text="2" VerticalAlignment="Center" Margin="5,0" Foreground="#FFFFFF" FontSize="14" FontWeight="SemiBold"/>
+                    <TextBlock x:Name="FontLabel" Text="Font:" VerticalAlignment="Center" Margin="10,0,5,0" Foreground="#FFFFFF" FontSize="14" FontWeight="SemiBold" Visibility="Collapsed"/>
+                    <ComboBox x:Name="FontComboBox" Width="120" VerticalAlignment="Center" Margin="5,0" Visibility="Collapsed" SelectionChanged="FontComboBox_SelectionChanged"/>
+                    <TextBlock x:Name="FontSizeLabel" Text="Font Size:" VerticalAlignment="Center" Margin="10,0,5,0" Foreground="#FFFFFF" FontSize="14" FontWeight="SemiBold" Visibility="Collapsed"/>
+                    <Slider x:Name="FontSizeSlider" Width="100" Minimum="8" Maximum="72" Value="12" ValueChanged="FontSizeSlider_ValueChanged" VerticalAlignment="Center" Margin="5,0" Visibility="Collapsed"/>
+                    <TextBlock x:Name="FontSizeText" Text="12" VerticalAlignment="Center" Margin="5,0" Foreground="#FFFFFF" FontSize="14" FontWeight="SemiBold" Visibility="Collapsed"/>
                 </StackPanel>
             </Grid>
         </Border>

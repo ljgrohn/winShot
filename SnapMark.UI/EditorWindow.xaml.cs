@@ -14,6 +14,8 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using System.Runtime.InteropServices;
+using Windows.ApplicationModel.DataTransfer;
 
 namespace SnapMark.UI;
 
@@ -37,6 +39,7 @@ public sealed partial class EditorWindow : Window
     private bool _isMoving = false;
     private Windows.Foundation.Point? _moveStartPoint;
     private IAnnotation? _moveStartAnnotation;
+    private System.Drawing.Rectangle _moveStartBounds;
     
     // Resize state
     private bool _isResizing = false;
@@ -45,7 +48,21 @@ public sealed partial class EditorWindow : Window
     
     // Zoom state - prevent auto-centering when user zooms manually
     private bool _isInitialFit = true;
-    private bool _isUserZooming = false;
+    
+    // Available fonts list
+    private static readonly string[] AvailableFonts = new[]
+    {
+        "Arial",
+        "Calibri",
+        "Comic Sans MS",
+        "Courier New",
+        "Georgia",
+        "Impact",
+        "Times New Roman",
+        "Trebuchet MS",
+        "Verdana",
+        "Segoe UI"
+    };
 
     public EditorWindow()
     {
@@ -60,6 +77,18 @@ public sealed partial class EditorWindow : Window
         
         // Handle zoom events to preserve viewport position
         ImageScrollViewer.ViewChanged += ImageScrollViewer_ViewChanged;
+        
+        // Populate font combo box
+        InitializeFontComboBox();
+    }
+    
+    private void InitializeFontComboBox()
+    {
+        FontComboBox.Items.Clear();
+        foreach (var fontName in AvailableFonts)
+        {
+            FontComboBox.Items.Add(fontName);
+        }
     }
 
     public void LoadCapture(CaptureResult captureResult)
@@ -233,9 +262,9 @@ public sealed partial class EditorWindow : Window
         return null; // Will implement with proper styling
     }
 
-    private void CopyButton_Click(object sender, RoutedEventArgs e)
+    private async void CopyButton_Click(object sender, RoutedEventArgs e)
     {
-        _ = CopyToClipboard();
+        await CopyToClipboard();
     }
 
     private async void SaveButton_Click(object sender, RoutedEventArgs e)
@@ -243,25 +272,61 @@ public sealed partial class EditorWindow : Window
         await SaveToFile();
     }
 
-    private Task CopyToClipboard()
+    private async Task CopyToClipboard()
     {
         try
         {
             var bitmap = RenderAnnotations();
+            
+            // Create DataPackage with multiple formats for better compatibility
+            var dataPackage = new DataPackage();
+            
+            // Method 1: Set as bitmap (for modern apps)
             var stream = new System.IO.MemoryStream();
             bitmap.Save(stream, ImageFormat.Png);
             stream.Position = 0;
-
-            var dataPackage = new Windows.ApplicationModel.DataTransfer.DataPackage();
             var ras = stream.AsRandomAccessStream();
             dataPackage.SetBitmap(RandomAccessStreamReference.CreateFromStream(ras));
-            Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(dataPackage);
+            
+            // Method 2: Also set as storage items for better compatibility
+            // Create a temporary file and add it to the clipboard
+            var tempFile = await Windows.Storage.ApplicationData.Current.TemporaryFolder.CreateFileAsync(
+                $"SnapMark_{Guid.NewGuid()}.png", 
+                Windows.Storage.CreationCollisionOption.ReplaceExisting);
+            
+            using (var fileStream = await tempFile.OpenAsync(Windows.Storage.FileAccessMode.ReadWrite))
+            {
+                stream.Position = 0;
+                var writeStream = fileStream.AsStreamForWrite();
+                await stream.CopyToAsync(writeStream);
+                await writeStream.FlushAsync();
+            }
+            
+            // Set the file in the clipboard
+            var storageItems = new[] { tempFile };
+            dataPackage.SetStorageItems(storageItems);
+            
+            // Set clipboard content
+            Clipboard.SetContent(dataPackage);
+            
+            // Request the clipboard to be copied (this ensures it's committed)
+            Clipboard.Flush();
+            
+            // Clean up temp file after a delay (give clipboard time to read it)
+            _ = Task.Delay(5000).ContinueWith(async _ =>
+            {
+                try
+                {
+                    await tempFile.DeleteAsync();
+                }
+                catch { /* Ignore cleanup errors */ }
+            });
         }
-        catch
+        catch (Exception ex)
         {
-            // Silently fail - in production, show error notification
+            // Log error in production
+            System.Diagnostics.Debug.WriteLine($"Clipboard copy failed: {ex.Message}");
         }
-        return Task.CompletedTask;
     }
 
     private async Task SaveToFile()
@@ -307,8 +372,13 @@ public sealed partial class EditorWindow : Window
         using var graphics = Graphics.FromImage(bitmap);
         graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
 
+        // Update text bounds before rendering to ensure they match actual text size
         foreach (var annotation in _annotations)
         {
+            if (annotation is TextAnnotation textAnnotation)
+            {
+                UpdateTextBounds(textAnnotation);
+            }
             annotation.Draw(graphics);
         }
 
@@ -323,7 +393,7 @@ public sealed partial class EditorWindow : Window
         }
         else if (e.Key == Windows.System.VirtualKey.Enter)
         {
-            CopyToClipboard();
+            _ = CopyToClipboard();
         }
         else if (e.Key == Windows.System.VirtualKey.S)
         {
@@ -427,32 +497,20 @@ public sealed partial class EditorWindow : Window
     private void ImageScrollViewer_PointerEntered(object sender, PointerRoutedEventArgs e)
     {
         // Update cursor when hand tool is active
+        // Note: Cursor management in WinUI 3 requires ProtectedCursor which is only accessible
+        // from classes inheriting from UIElement. Since we can't access it here, cursor
+        // will use default behavior. For full cursor control, consider creating a custom
+        // ScrollViewer control that inherits from ScrollViewer.
         if (_currentTool == AnnotationType.Hand)
         {
-            // Set hand cursor - WinUI 3 uses ProtectedCursor
-            try
-            {
-                var cursor = Microsoft.UI.Input.InputSystemCursor.Create(Microsoft.UI.Input.InputSystemCursorShape.Hand);
-                ImageScrollViewer.ProtectedCursor = cursor;
-            }
-            catch
-            {
-                // Fallback if ProtectedCursor is not available
-            }
+            // Cursor will be handled by the framework's default behavior
         }
     }
     
     private void ImageScrollViewer_PointerExited(object sender, PointerRoutedEventArgs e)
     {
         // Reset cursor when leaving ScrollViewer
-        try
-        {
-            ImageScrollViewer.ProtectedCursor = null;
-        }
-        catch
-        {
-            // Ignore if ProtectedCursor is not available
-        }
+        // Note: See comment in PointerEntered handler
     }
 
     private void ColorPickerButton_Click(object sender, RoutedEventArgs e)
@@ -525,6 +583,41 @@ public sealed partial class EditorWindow : Window
         RedrawAnnotations();
     }
 
+    private void FontComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_annotations.SelectedAnnotation is not TextAnnotation textAnnotation) return;
+        if (FontComboBox.SelectedIndex < 0 || FontComboBox.SelectedIndex >= AvailableFonts.Length) return;
+        
+        var selectedFontName = AvailableFonts[FontComboBox.SelectedIndex];
+        var newFontFamily = new System.Drawing.FontFamily(selectedFontName);
+        
+        // Update annotation font via command
+        var command = new ChangeFontCommand(textAnnotation, newFontFamily);
+        _commandManager.ExecuteCommand(command);
+        
+        // Update bounds to match new font
+        UpdateTextBounds(textAnnotation);
+        
+        RedrawAnnotations();
+    }
+
+    private void FontSizeSlider_ValueChanged(object sender, Microsoft.UI.Xaml.Controls.Primitives.RangeBaseValueChangedEventArgs e)
+    {
+        if (_annotations.SelectedAnnotation is not TextAnnotation textAnnotation) return;
+        
+        var newSize = (float)e.NewValue;
+        FontSizeText.Text = ((int)newSize).ToString();
+        
+        // Update annotation font size via command
+        var command = new ChangeFontSizeCommand(textAnnotation, newSize);
+        _commandManager.ExecuteCommand(command);
+        
+        // Update bounds to match new font size
+        UpdateTextBounds(textAnnotation);
+        
+        RedrawAnnotations();
+    }
+
     private void UpdatePropertyPanel()
     {
         if (_annotations.SelectedAnnotation != null)
@@ -535,8 +628,57 @@ public sealed partial class EditorWindow : Window
                 _annotations.SelectedAnnotation.Color.R,
                 _annotations.SelectedAnnotation.Color.G,
                 _annotations.SelectedAnnotation.Color.B);
-            StrokeWidthSlider.Value = _annotations.SelectedAnnotation.StrokeWidth;
-            StrokeWidthText.Text = _annotations.SelectedAnnotation.StrokeWidth.ToString();
+            
+            // Show/hide controls based on annotation type
+            bool isTextAnnotation = _annotations.SelectedAnnotation is TextAnnotation;
+            
+            if (isTextAnnotation)
+            {
+                // Hide stroke width controls for text
+                StrokeWidthLabel.Visibility = Visibility.Collapsed;
+                StrokeWidthSlider.Visibility = Visibility.Collapsed;
+                StrokeWidthText.Visibility = Visibility.Collapsed;
+                
+                // Show font controls for text
+                FontLabel.Visibility = Visibility.Visible;
+                FontComboBox.Visibility = Visibility.Visible;
+                FontSizeLabel.Visibility = Visibility.Visible;
+                FontSizeSlider.Visibility = Visibility.Visible;
+                FontSizeText.Visibility = Visibility.Visible;
+                
+                var textAnnotation = (TextAnnotation)_annotations.SelectedAnnotation;
+                FontSizeSlider.Value = textAnnotation.Font.Size;
+                FontSizeText.Text = ((int)textAnnotation.Font.Size).ToString();
+                
+                // Set selected font in combo box
+                var fontFamilyName = textAnnotation.Font.FontFamily.Name;
+                var index = Array.IndexOf(AvailableFonts, fontFamilyName);
+                if (index >= 0)
+                {
+                    FontComboBox.SelectedIndex = index;
+                }
+                else
+                {
+                    // If font not in list, select first item (Arial)
+                    FontComboBox.SelectedIndex = 0;
+                }
+            }
+            else
+            {
+                // Show stroke width controls for shapes
+                StrokeWidthLabel.Visibility = Visibility.Visible;
+                StrokeWidthSlider.Visibility = Visibility.Visible;
+                StrokeWidthText.Visibility = Visibility.Visible;
+                StrokeWidthSlider.Value = _annotations.SelectedAnnotation.StrokeWidth;
+                StrokeWidthText.Text = _annotations.SelectedAnnotation.StrokeWidth.ToString();
+                
+                // Hide font controls for shapes
+                FontLabel.Visibility = Visibility.Collapsed;
+                FontComboBox.Visibility = Visibility.Collapsed;
+                FontSizeLabel.Visibility = Visibility.Collapsed;
+                FontSizeSlider.Visibility = Visibility.Collapsed;
+                FontSizeText.Visibility = Visibility.Collapsed;
+            }
         }
         else
         {
@@ -570,27 +712,34 @@ public sealed partial class EditorWindow : Window
             
             if (hitAnnotation != null)
             {
-                // Check if clicking on resize handle
-                var handle = GetResizeHandle(hitAnnotation, drawingPoint);
-                if (handle != ResizeHandle.None)
+                // Text annotations should not be manually resized - they auto-size to fit text
+                // Only allow resizing for non-text annotations
+                if (hitAnnotation is not TextAnnotation)
                 {
-                    _isResizing = true;
-                    _resizeHandle = handle;
-                    _resizeStartBounds = hitAnnotation.Bounds;
-                    _annotations.SelectAnnotation(hitAnnotation);
-                    UpdatePropertyPanel();
-                    AnnotationCanvas.CapturePointer(e.Pointer);
-                    return;
+                    // Check if clicking on resize handle
+                    var handle = GetResizeHandle(hitAnnotation, drawingPoint);
+                    if (handle != ResizeHandle.None)
+                    {
+                        _isResizing = true;
+                        _resizeHandle = handle;
+                        _resizeStartBounds = hitAnnotation.Bounds;
+                        _annotations.SelectAnnotation(hitAnnotation);
+                        UpdatePropertyPanel();
+                        AnnotationCanvas.CapturePointer(e.Pointer);
+                        e.Handled = true;
+                        return;
+                    }
                 }
                 
-                // Start moving annotation
-                _isMoving = true;
+                // Select annotation and prepare for potential move (but don't start moving yet)
                 _moveStartPoint = point;
                 _moveStartAnnotation = hitAnnotation;
+                _moveStartBounds = hitAnnotation.Bounds;
                 _annotations.SelectAnnotation(hitAnnotation);
                 UpdatePropertyPanel();
                 AnnotationCanvas.CapturePointer(e.Pointer);
                 RedrawAnnotations();
+                e.Handled = true;
                 return;
             }
             
@@ -601,6 +750,7 @@ public sealed partial class EditorWindow : Window
                 UpdatePropertyPanel();
                 RedrawAnnotations();
             }
+            e.Handled = true;
             return;
         }
         
@@ -648,26 +798,32 @@ public sealed partial class EditorWindow : Window
             return;
         }
         
-        // Handle moving
-        if (_isMoving && _moveStartPoint.HasValue && _moveStartAnnotation != null)
+        // Handle moving - only start moving if pointer has moved significantly
+        if (_moveStartPoint.HasValue && _moveStartAnnotation != null)
         {
             var deltaX = currentPoint.X - _moveStartPoint.Value.X;
             var deltaY = currentPoint.Y - _moveStartPoint.Value.Y;
             
-            // Convert delta to canvas coordinates accounting for zoom
-            var zoomFactor = ImageScrollViewer.ZoomFactor;
-            var drawingDelta = new System.Drawing.Point((int)(deltaX / zoomFactor), (int)(deltaY / zoomFactor));
-            
-            // Temporarily move annotation for preview
-            var originalBounds = _moveStartAnnotation.Bounds;
-            _moveStartAnnotation.Move(drawingDelta);
-            RedrawAnnotations();
-            
-            // Restore original bounds (will be set properly on release)
-            _moveStartAnnotation.Bounds = originalBounds;
-            _moveStartAnnotation.Move(new System.Drawing.Point(-drawingDelta.X, -drawingDelta.Y));
-            _moveStartAnnotation.Move(drawingDelta);
-            return;
+            // Only start moving if pointer has moved more than a small threshold
+            const double moveThreshold = 3.0;
+            if (Math.Abs(deltaX) > moveThreshold || Math.Abs(deltaY) > moveThreshold)
+            {
+                if (!_isMoving)
+                {
+                    _isMoving = true;
+                }
+                
+                // Convert delta to canvas coordinates accounting for zoom
+                var zoomFactor = ImageScrollViewer.ZoomFactor;
+                var drawingDelta = new System.Drawing.Point((int)(deltaX / zoomFactor), (int)(deltaY / zoomFactor));
+                
+                // Restore original bounds, then apply new delta
+                _moveStartAnnotation.Bounds = _moveStartBounds;
+                _moveStartAnnotation.Move(drawingDelta);
+                RedrawAnnotations();
+                e.Handled = true;
+                return;
+            }
         }
         
         // Handle drawing preview
@@ -708,21 +864,33 @@ public sealed partial class EditorWindow : Window
             return;
         }
         
-        // Handle move end
-        if (_isMoving && _moveStartPoint.HasValue && _moveStartAnnotation != null)
+        // Handle move end - check if we were actually moving or just selecting
+        if (_moveStartPoint.HasValue && _moveStartAnnotation != null)
         {
-            var endPoint = e.GetCurrentPoint(AnnotationCanvas).Position;
-            var deltaX = endPoint.X - _moveStartPoint.Value.X;
-            var deltaY = endPoint.Y - _moveStartPoint.Value.Y;
-            
-            // Convert delta to canvas coordinates accounting for zoom
-            var zoomFactor = ImageScrollViewer.ZoomFactor;
-            var drawingDelta = new System.Drawing.Point((int)(deltaX / zoomFactor), (int)(deltaY / zoomFactor));
-            
-            if (drawingDelta.X != 0 || drawingDelta.Y != 0)
+            if (_isMoving)
             {
-                var command = new MoveAnnotationCommand(_moveStartAnnotation, drawingDelta);
-                _commandManager.ExecuteCommand(command);
+                // We were actually moving, so commit the move
+                var endPoint = e.GetCurrentPoint(AnnotationCanvas).Position;
+                var deltaX = endPoint.X - _moveStartPoint.Value.X;
+                var deltaY = endPoint.Y - _moveStartPoint.Value.Y;
+                
+                // Convert delta to canvas coordinates accounting for zoom
+                var zoomFactor = ImageScrollViewer.ZoomFactor;
+                var drawingDelta = new System.Drawing.Point((int)(deltaX / zoomFactor), (int)(deltaY / zoomFactor));
+                
+                // Restore original position before applying command
+                _moveStartAnnotation.Bounds = _moveStartBounds;
+                
+                if (drawingDelta.X != 0 || drawingDelta.Y != 0)
+                {
+                    var command = new MoveAnnotationCommand(_moveStartAnnotation, drawingDelta);
+                    _commandManager.ExecuteCommand(command);
+                }
+            }
+            else
+            {
+                // Just a click selection, restore bounds in case they were modified during preview
+                _moveStartAnnotation.Bounds = _moveStartBounds;
             }
             
             _isMoving = false;
@@ -730,6 +898,7 @@ public sealed partial class EditorWindow : Window
             _moveStartAnnotation = null;
             AnnotationCanvas.ReleasePointerCapture(e.Pointer);
             RedrawAnnotations();
+            e.Handled = true;
             return;
         }
         
@@ -857,17 +1026,81 @@ public sealed partial class EditorWindow : Window
             PrimaryButtonText = "OK",
             SecondaryButtonText = "Cancel",
             DefaultButton = ContentDialogButton.Primary,
-            XamlRoot = this.Content.XamlRoot
+            XamlRoot = this.Content.XamlRoot,
+            Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 0x1a, 0x1a, 0x1a))
         };
+        
+        var container = new StackPanel { Spacing = 10, MinWidth = 350 };
         
         var textBox = new TextBox
         {
             PlaceholderText = "Enter annotation text...",
-            MinWidth = 300,
-            AcceptsReturn = false
+            AcceptsReturn = false,
+            Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 0x1a, 0x1a, 0x1a)),
+            Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.White),
+            BorderBrush = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 0x40, 0x40, 0x40))
         };
         
-        dialog.Content = textBox;
+        var fontContainer = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
+        var fontLabel = new TextBlock 
+        { 
+            Text = "Font:", 
+            VerticalAlignment = VerticalAlignment.Center,
+            Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.White),
+            Width = 60
+        };
+        var fontComboBox = new ComboBox 
+        { 
+            Width = 150,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        foreach (var fontName in AvailableFonts)
+        {
+            fontComboBox.Items.Add(fontName);
+        }
+        fontComboBox.SelectedIndex = 0; // Default to Arial
+        
+        fontContainer.Children.Add(fontLabel);
+        fontContainer.Children.Add(fontComboBox);
+        
+        var fontSizeContainer = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
+        var fontSizeLabel = new TextBlock 
+        { 
+            Text = "Font Size:", 
+            VerticalAlignment = VerticalAlignment.Center,
+            Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.White),
+            Width = 80
+        };
+        var fontSizeSlider = new Slider 
+        { 
+            Minimum = 8, 
+            Maximum = 72, 
+            Value = 12, 
+            Width = 150,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        var fontSizeText = new TextBlock 
+        { 
+            Text = "12", 
+            VerticalAlignment = VerticalAlignment.Center,
+            Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.White),
+            Width = 30
+        };
+        
+        fontSizeSlider.ValueChanged += (s, e) => 
+        {
+            fontSizeText.Text = ((int)e.NewValue).ToString();
+        };
+        
+        fontSizeContainer.Children.Add(fontSizeLabel);
+        fontSizeContainer.Children.Add(fontSizeSlider);
+        fontSizeContainer.Children.Add(fontSizeText);
+        
+        container.Children.Add(textBox);
+        container.Children.Add(fontContainer);
+        container.Children.Add(fontSizeContainer);
+        
+        dialog.Content = container;
         
         // Focus the text box when dialog opens
         dialog.Opened += (s, e) => textBox.Focus(Microsoft.UI.Xaml.FocusState.Programmatic);
@@ -877,7 +1110,21 @@ public sealed partial class EditorWindow : Window
         if (result == ContentDialogResult.Primary && !string.IsNullOrWhiteSpace(textBox.Text))
         {
             var drawingPoint = WinUIToDrawingPoint(position);
+            var fontSize = (float)fontSizeSlider.Value;
+            var selectedFontName = fontComboBox.SelectedIndex >= 0 && fontComboBox.SelectedIndex < AvailableFonts.Length
+                ? AvailableFonts[fontComboBox.SelectedIndex]
+                : "Arial";
+            var fontFamily = new System.Drawing.FontFamily(selectedFontName);
+            
             var textAnnotation = new TextAnnotation(drawingPoint, textBox.Text);
+            // Update font family and size
+            var oldFont = textAnnotation.Font;
+            textAnnotation.Font = new Font(fontFamily, fontSize, oldFont.Style);
+            oldFont.Dispose();
+            
+            // Update bounds to match actual text size
+            UpdateTextBounds(textAnnotation);
+            
             var command = new CreateAnnotationCommand(_annotations, textAnnotation);
             _commandManager.ExecuteCommand(command);
             RedrawAnnotations();
@@ -886,15 +1133,25 @@ public sealed partial class EditorWindow : Window
 
     private void RedrawAnnotations()
     {
-        // Clear existing annotation shapes and handles
-        var shapesToRemove = AnnotationCanvas.Children
-            .OfType<Microsoft.UI.Xaml.Shapes.Shape>()
-            .Where(s => s != _previewShape)
+        // Update text bounds before rendering to ensure they match actual text size
+        foreach (var annotation in _annotations)
+        {
+            if (annotation is TextAnnotation textAnnotation)
+            {
+                UpdateTextBounds(textAnnotation);
+            }
+        }
+        
+        // Clear existing annotation shapes, borders (for text), and handles (but keep preview shape)
+        var elementsToRemove = AnnotationCanvas.Children
+            .Where(child => 
+                (child is Microsoft.UI.Xaml.Shapes.Shape shape && shape != _previewShape) ||
+                child is Border)
             .ToList();
         
-        foreach (var shape in shapesToRemove)
+        foreach (var element in elementsToRemove)
         {
-            AnnotationCanvas.Children.Remove(shape);
+            AnnotationCanvas.Children.Remove(element);
         }
 
         // Render annotations as WinUI shapes
@@ -1100,16 +1357,54 @@ public sealed partial class EditorWindow : Window
     private Microsoft.UI.Xaml.Shapes.Shape? TextToShape(TextAnnotation text)
     {
         // Text requires TextBlock, not Shape
+        var textColor = text.Color;
+        var isBlack = textColor.R == 0 && textColor.G == 0 && textColor.B == 0;
+        
+        // Set background: white for black text, #1a1a1a for other colors
+        var backgroundColor = isBlack 
+            ? Microsoft.UI.Colors.White 
+            : Windows.UI.Color.FromArgb(255, 0x1a, 0x1a, 0x1a);
+        
+        // Measure actual text size using Graphics (same method as UpdateBoundsFromText)
+        // This ensures padding is calculated from actual text size, not bounds
+        using var tempBitmap = new Bitmap(1, 1);
+        using var graphics = Graphics.FromImage(tempBitmap);
+        var textSize = graphics.MeasureString(text.Text, text.Font);
+        var textWidth = textSize.Width;
+        var textHeight = textSize.Height;
+        
+        // Calculate padding: 4% left/right, 3% top/bottom (based on actual text size)
+        var horizontalPadding = (int)(textWidth * 0.04);
+        var topPadding = (int)(textHeight * 0.03);
+        var bottomPadding = topPadding; // Use same padding for bottom
+        
+        // Create TextBlock with center alignment
         var textBlock = new Microsoft.UI.Xaml.Controls.TextBlock
         {
             Text = text.Text,
             Foreground = ColorToBrush(text.Color),
-            FontSize = text.Font.Size
+            FontSize = text.Font.Size,
+            TextAlignment = Microsoft.UI.Xaml.TextAlignment.Center,
+            VerticalAlignment = Microsoft.UI.Xaml.VerticalAlignment.Center,
+            HorizontalAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Center
         };
-        Canvas.SetLeft(textBlock, text.Bounds.X);
-        Canvas.SetTop(textBlock, text.Bounds.Y);
-        AnnotationCanvas.Children.Add(textBlock);
-        return null; // TextBlock is not a Shape
+        
+        // Wrap TextBlock in Border with rounded corners and padding
+        // Border size should match the bounds (which already includes padding from UpdateBoundsFromText)
+        var border = new Border
+        {
+            Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(backgroundColor),
+            Padding = new Thickness(horizontalPadding, topPadding, horizontalPadding, bottomPadding),
+            CornerRadius = new CornerRadius(4), // Slightly rounded corners
+            Child = textBlock,
+            Width = text.Bounds.Width,
+            Height = text.Bounds.Height
+        };
+        
+        Canvas.SetLeft(border, text.Bounds.X);
+        Canvas.SetTop(border, text.Bounds.Y);
+        AnnotationCanvas.Children.Add(border);
+        return null; // Border is not a Shape
     }
 
     private Microsoft.UI.Xaml.Media.Brush ColorToBrush(System.Drawing.Color color)
@@ -1186,8 +1481,24 @@ public sealed partial class EditorWindow : Window
         return ResizeHandle.None;
     }
 
+    private void UpdateTextBounds(TextAnnotation textAnnotation)
+    {
+        // Create a temporary bitmap to get a Graphics object for text measurement
+        using var tempBitmap = new Bitmap(1, 1);
+        using var graphics = Graphics.FromImage(tempBitmap);
+        textAnnotation.UpdateBoundsFromText(graphics);
+    }
+
     private void ResizeAnnotation(IAnnotation annotation, ResizeHandle handle, System.Drawing.Point newPoint)
     {
+        // Text annotations should not be manually resized - they auto-size to fit text
+        if (annotation is TextAnnotation textAnnotation)
+        {
+            // Recalculate bounds from text instead of manual resize
+            UpdateTextBounds(textAnnotation);
+            return;
+        }
+        
         var bounds = annotation.Bounds;
         var newBounds = bounds;
         
