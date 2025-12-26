@@ -9,6 +9,11 @@ public class TextAnnotation : AnnotationBase
     public Font Font { get; set; } = new Font("Arial", 12);
     public StringAlignment HorizontalAlignment { get; set; } = StringAlignment.Center;
     public StringAlignment VerticalAlignment { get; set; } = StringAlignment.Center;
+    
+    // Custom vertical padding (top and bottom) - can be adjusted by resizing
+    // If null, uses default 3% of text height
+    public int? CustomTopPadding { get; set; }
+    public int? CustomBottomPadding { get; set; }
 
     public TextAnnotation(Point location, string text) : base(new Rectangle(location, new Size(100, 30)))
     {
@@ -27,11 +32,11 @@ public class TextAnnotation : AnnotationBase
         var textWidth = textSize.Width;
         var textHeight = textSize.Height;
         
-        // Calculate padding: 2-character buffer on left/right, 3% top/bottom
+        // Calculate padding: 2-character buffer on left/right, custom or default top/bottom
         var twoCharSize = graphics.MeasureString("MM", Font);
         var horizontalPadding = (int)twoCharSize.Width;
-        var topPadding = (int)(textHeight * 0.03);
-        var bottomPadding = topPadding;
+        var topPadding = CustomTopPadding ?? (int)(textHeight * 0.03);
+        var bottomPadding = CustomBottomPadding ?? (int)(textHeight * 0.03);
         
         // Calculate text rectangle within bounds with padding
         var textRect = new Rectangle(
@@ -93,18 +98,32 @@ public class TextAnnotation : AnnotationBase
         var size = graphics.MeasureString(Text, Font, int.MaxValue, stringFormat);
         stringFormat.Dispose();
         
-        // Calculate padding: 2-character buffer on left/right, 3% on top/bottom
+        // Calculate padding: 2-character buffer on left/right, custom or default top/bottom
         // Measure 2 characters (using "MM" as a reasonable width estimate)
         var twoCharSize = graphics.MeasureString("MM", Font);
         var horizontalPadding = (int)twoCharSize.Width;
-        var topPadding = (int)(size.Height * 0.03);
-        var bottomPadding = topPadding; // Use same padding for bottom
+        var topPadding = CustomTopPadding ?? (int)(size.Height * 0.03);
+        var bottomPadding = CustomBottomPadding ?? (int)(size.Height * 0.03);
         
-        Bounds = new Rectangle(
-            Bounds.Location, 
-            new Size(
-                (int)size.Width + (horizontalPadding * 2), 
-                (int)size.Height + topPadding + bottomPadding));
+        // Only update bounds if custom padding hasn't been set (auto-size mode)
+        // If custom padding is set, preserve the current bounds height
+        if (!CustomTopPadding.HasValue && !CustomBottomPadding.HasValue)
+        {
+            Bounds = new Rectangle(
+                Bounds.Location, 
+                new Size(
+                    (int)size.Width + (horizontalPadding * 2), 
+                    (int)size.Height + topPadding + bottomPadding));
+        }
+        else
+        {
+            // Update width based on text, but preserve height (which is controlled by custom padding)
+            Bounds = new Rectangle(
+                Bounds.Location, 
+                new Size(
+                    (int)size.Width + (horizontalPadding * 2), 
+                    Bounds.Height));
+        }
     }
 }
 

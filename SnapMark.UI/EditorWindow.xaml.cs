@@ -51,6 +51,10 @@ public sealed partial class EditorWindow : Window
     private ResizeHandle? _resizeHandle;
     private System.Drawing.Rectangle _resizeStartBounds;
     
+    // Text annotation resize state (for padding adjustment)
+    private int _resizeStartTopPadding;
+    private int _resizeStartBottomPadding;
+    
     // Zoom state - prevent auto-centering when user zooms manually
     private bool _isInitialFit = true;
     
@@ -76,15 +80,24 @@ public sealed partial class EditorWindow : Window
         this.AppWindow.Resize(new Windows.Graphics.SizeInt32(1200, 800));
         this.Closed += EditorWindow_Closed;
         
-        // Handle keyboard shortcuts via UIElement
+        // Handle keyboard shortcuts - attach to root grid and canvases
+        // The root grid will handle keyboard events when the window is active
+        var rootGrid = (Microsoft.UI.Xaml.Controls.Grid)this.Content;
+        rootGrid.KeyDown += EditorWindow_KeyDown;
+        
+        // Also handle on canvases and scroll viewer
         EditorCanvas.KeyDown += EditorWindow_KeyDown;
         AnnotationCanvas.KeyDown += EditorWindow_KeyDown;
+        ImageScrollViewer.KeyDown += EditorWindow_KeyDown;
         
         // Handle zoom events to preserve viewport position
         ImageScrollViewer.ViewChanged += ImageScrollViewer_ViewChanged;
         
         // Populate font combo box
         InitializeFontComboBox();
+        
+        // Initialize undo/redo button states
+        UpdateUndoRedoButtons();
     }
     
     private void InitializeFontComboBox()
@@ -99,6 +112,9 @@ public sealed partial class EditorWindow : Window
     public void LoadCapture(CaptureResult captureResult)
     {
         _captureResult = captureResult;
+        
+        // Ensure window can receive keyboard events
+        this.Activate();
         
         // Convert Bitmap to WinUI Image
         var bitmap = captureResult.Bitmap;
@@ -414,7 +430,10 @@ public sealed partial class EditorWindow : Window
             if (ctrlState.HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down))
             {
                 _commandManager.Undo();
+                UpdateUndoRedoButtons();
                 RedrawAnnotations();
+                UpdatePropertyPanel();
+                e.Handled = true;
             }
         }
         else if (e.Key == Windows.System.VirtualKey.Y)
@@ -423,7 +442,10 @@ public sealed partial class EditorWindow : Window
             if (ctrlState.HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down))
             {
                 _commandManager.Redo();
+                UpdateUndoRedoButtons();
                 RedrawAnnotations();
+                UpdatePropertyPanel();
+                e.Handled = true;
             }
         }
         else if (e.Key == Windows.System.VirtualKey.Delete)
@@ -432,9 +454,32 @@ public sealed partial class EditorWindow : Window
             {
                 var command = new DeleteAnnotationCommand(_annotations, _annotations.SelectedAnnotation);
                 _commandManager.ExecuteCommand(command);
+                UpdateUndoRedoButtons();
                 RedrawAnnotations();
             }
         }
+    }
+
+    private void UndoButton_Click(object sender, RoutedEventArgs e)
+    {
+        _commandManager.Undo();
+        UpdateUndoRedoButtons();
+        RedrawAnnotations();
+        UpdatePropertyPanel();
+    }
+
+    private void RedoButton_Click(object sender, RoutedEventArgs e)
+    {
+        _commandManager.Redo();
+        UpdateUndoRedoButtons();
+        RedrawAnnotations();
+        UpdatePropertyPanel();
+    }
+
+    private void UpdateUndoRedoButtons()
+    {
+        UndoButton.IsEnabled = _commandManager.CanUndo;
+        RedoButton.IsEnabled = _commandManager.CanRedo;
     }
 
     private void EditorWindow_Closed(object sender, WindowEventArgs args)
@@ -560,6 +605,7 @@ public sealed partial class EditorWindow : Window
                 {
                     var command = new ChangeColorCommand(_annotations.SelectedAnnotation, color);
                     _commandManager.ExecuteCommand(command);
+                    UpdateUndoRedoButtons();
                     UpdatePropertyPanel();
                     RedrawAnnotations();
                 }
@@ -585,6 +631,7 @@ public sealed partial class EditorWindow : Window
         // Update annotation stroke width via command
         var command = new ChangeStrokeWidthCommand(_annotations.SelectedAnnotation, newWidth);
         _commandManager.ExecuteCommand(command);
+        UpdateUndoRedoButtons();
         RedrawAnnotations();
     }
 
@@ -599,6 +646,7 @@ public sealed partial class EditorWindow : Window
         // Update annotation font via command
         var command = new ChangeFontCommand(textAnnotation, newFontFamily);
         _commandManager.ExecuteCommand(command);
+        UpdateUndoRedoButtons();
         
         // Update bounds to match new font
         UpdateTextBounds(textAnnotation);
@@ -616,6 +664,7 @@ public sealed partial class EditorWindow : Window
         // Update annotation font size via command
         var command = new ChangeFontSizeCommand(textAnnotation, newSize);
         _commandManager.ExecuteCommand(command);
+        UpdateUndoRedoButtons();
         
         // Update bounds to match new font size
         UpdateTextBounds(textAnnotation);
@@ -717,23 +766,33 @@ public sealed partial class EditorWindow : Window
             
             if (hitAnnotation != null)
             {
-                // Text annotations should not be manually resized - they auto-size to fit text
-                // Only allow resizing for non-text annotations
-                if (hitAnnotation is not TextAnnotation)
+                // Check if clicking on resize handle
+                var handle = GetResizeHandle(hitAnnotation, drawingPoint);
+                if (handle != ResizeHandle.None)
                 {
-                    // Check if clicking on resize handle
-                    var handle = GetResizeHandle(hitAnnotation, drawingPoint);
-                    if (handle != ResizeHandle.None)
+                    _isResizing = true;
+                    _resizeHandle = handle;
+                    _resizeStartBounds = hitAnnotation.Bounds;
+                    
+                    // For text annotations, store the original padding values
+                    if (hitAnnotation is TextAnnotation textAnnotation)
                     {
-                        _isResizing = true;
-                        _resizeHandle = handle;
-                        _resizeStartBounds = hitAnnotation.Bounds;
-                        _annotations.SelectAnnotation(hitAnnotation);
-                        UpdatePropertyPanel();
-                        AnnotationCanvas.CapturePointer(e.Pointer);
-                        e.Handled = true;
-                        return;
+                        // Calculate current padding values
+                        using var tempBitmap = new Bitmap(1, 1);
+                        using var graphics = Graphics.FromImage(tempBitmap);
+                        var stringFormat = new System.Drawing.StringFormat(System.Drawing.StringFormatFlags.LineLimit);
+                        var textSize = graphics.MeasureString(textAnnotation.Text, textAnnotation.Font, int.MaxValue, stringFormat);
+                        stringFormat.Dispose();
+                        var defaultTopPadding = (int)(textSize.Height * 0.03);
+                        _resizeStartTopPadding = textAnnotation.CustomTopPadding ?? defaultTopPadding;
+                        _resizeStartBottomPadding = textAnnotation.CustomBottomPadding ?? defaultTopPadding;
                     }
+                    
+                    _annotations.SelectAnnotation(hitAnnotation);
+                    UpdatePropertyPanel();
+                    AnnotationCanvas.CapturePointer(e.Pointer);
+                    e.Handled = true;
+                    return;
                 }
                 
                 // Select annotation and prepare for potential move (but don't start moving yet)
@@ -950,6 +1009,7 @@ public sealed partial class EditorWindow : Window
             var newSize = _moveStartAnnotation.Bounds.Size;
             var command = new ResizeAnnotationCommand(_moveStartAnnotation, newSize);
             _commandManager.ExecuteCommand(command);
+            UpdateUndoRedoButtons();
             
             _isResizing = false;
             _resizeHandle = null;
@@ -980,6 +1040,7 @@ public sealed partial class EditorWindow : Window
                 {
                     var command = new MoveAnnotationCommand(_moveStartAnnotation, drawingDelta);
                     _commandManager.ExecuteCommand(command);
+                    UpdateUndoRedoButtons();
                 }
             }
             else
@@ -1109,6 +1170,7 @@ public sealed partial class EditorWindow : Window
         {
             var command = new CreateAnnotationCommand(_annotations, annotation);
             _commandManager.ExecuteCommand(command);
+            UpdateUndoRedoButtons();
             RedrawAnnotations();
         }
     }
@@ -1224,6 +1286,7 @@ public sealed partial class EditorWindow : Window
             
             var command = new CreateAnnotationCommand(_annotations, textAnnotation);
             _commandManager.ExecuteCommand(command);
+            UpdateUndoRedoButtons();
             RedrawAnnotations();
         }
     }
@@ -1275,18 +1338,25 @@ public sealed partial class EditorWindow : Window
         var bounds = annotation.Bounds;
         var handleBrush = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Blue);
         
-        // Draw 8 resize handles (corners + edges)
-        var handles = new[]
-        {
-            new { Point = new Windows.Foundation.Point(bounds.Left, bounds.Top), Handle = ResizeHandle.TopLeft },
-            new { Point = new Windows.Foundation.Point(bounds.Left + bounds.Width / 2.0, bounds.Top), Handle = ResizeHandle.Top },
-            new { Point = new Windows.Foundation.Point(bounds.Right, bounds.Top), Handle = ResizeHandle.TopRight },
-            new { Point = new Windows.Foundation.Point(bounds.Right, bounds.Top + bounds.Height / 2.0), Handle = ResizeHandle.Right },
-            new { Point = new Windows.Foundation.Point(bounds.Right, bounds.Bottom), Handle = ResizeHandle.BottomRight },
-            new { Point = new Windows.Foundation.Point(bounds.Left + bounds.Width / 2.0, bounds.Bottom), Handle = ResizeHandle.Bottom },
-            new { Point = new Windows.Foundation.Point(bounds.Left, bounds.Bottom), Handle = ResizeHandle.BottomLeft },
-            new { Point = new Windows.Foundation.Point(bounds.Left, bounds.Top + bounds.Height / 2.0), Handle = ResizeHandle.Left }
-        };
+        // For text annotations, only show top and bottom handles (for padding adjustment)
+        // For other annotations, show all 8 handles
+        var handles = annotation is TextAnnotation
+            ? new[]
+            {
+                new { Point = new Windows.Foundation.Point(bounds.Left + bounds.Width / 2.0, bounds.Top), Handle = ResizeHandle.Top },
+                new { Point = new Windows.Foundation.Point(bounds.Left + bounds.Width / 2.0, bounds.Bottom), Handle = ResizeHandle.Bottom }
+            }
+            : new[]
+            {
+                new { Point = new Windows.Foundation.Point(bounds.Left, bounds.Top), Handle = ResizeHandle.TopLeft },
+                new { Point = new Windows.Foundation.Point(bounds.Left + bounds.Width / 2.0, bounds.Top), Handle = ResizeHandle.Top },
+                new { Point = new Windows.Foundation.Point(bounds.Right, bounds.Top), Handle = ResizeHandle.TopRight },
+                new { Point = new Windows.Foundation.Point(bounds.Right, bounds.Top + bounds.Height / 2.0), Handle = ResizeHandle.Right },
+                new { Point = new Windows.Foundation.Point(bounds.Right, bounds.Bottom), Handle = ResizeHandle.BottomRight },
+                new { Point = new Windows.Foundation.Point(bounds.Left + bounds.Width / 2.0, bounds.Bottom), Handle = ResizeHandle.Bottom },
+                new { Point = new Windows.Foundation.Point(bounds.Left, bounds.Bottom), Handle = ResizeHandle.BottomLeft },
+                new { Point = new Windows.Foundation.Point(bounds.Left, bounds.Top + bounds.Height / 2.0), Handle = ResizeHandle.Left }
+            };
         
         foreach (var handle in handles)
         {
@@ -1597,11 +1667,95 @@ public sealed partial class EditorWindow : Window
 
     private void ResizeAnnotation(IAnnotation annotation, ResizeHandle handle, System.Drawing.Point newPoint)
     {
-        // Text annotations should not be manually resized - they auto-size to fit text
+        // Handle text annotations specially - adjust padding when resizing vertically
         if (annotation is TextAnnotation textAnnotation)
         {
-            // Recalculate bounds from text instead of manual resize
-            UpdateTextBounds(textAnnotation);
+            var textBounds = annotation.Bounds;
+            var heightDelta = 0;
+            
+            // Calculate height change based on handle
+            switch (handle)
+            {
+                case ResizeHandle.Top:
+                case ResizeHandle.TopLeft:
+                case ResizeHandle.TopRight:
+                    heightDelta = textBounds.Top - newPoint.Y; // Positive when dragging up
+                    break;
+                case ResizeHandle.Bottom:
+                case ResizeHandle.BottomLeft:
+                case ResizeHandle.BottomRight:
+                    heightDelta = newPoint.Y - textBounds.Bottom; // Positive when dragging down
+                    break;
+                case ResizeHandle.Left:
+                case ResizeHandle.Right:
+                    // Horizontal resize - recalculate width based on text
+                    using (var tempBitmap = new Bitmap(1, 1))
+                    using (var graphics = Graphics.FromImage(tempBitmap))
+                    {
+                        var stringFormat = new System.Drawing.StringFormat(System.Drawing.StringFormatFlags.LineLimit);
+                        var textSize = graphics.MeasureString(textAnnotation.Text, textAnnotation.Font, int.MaxValue, stringFormat);
+                        stringFormat.Dispose();
+                        var twoCharSize = graphics.MeasureString("MM", textAnnotation.Font);
+                        var horizontalPadding = (int)twoCharSize.Width;
+                        var newWidth = (int)textSize.Width + (horizontalPadding * 2);
+                        
+                        // Update bounds width, keeping height and position
+                        annotation.Bounds = new System.Drawing.Rectangle(
+                            textBounds.Left,
+                            textBounds.Top,
+                            newWidth,
+                            textBounds.Height);
+                    }
+                    return;
+            }
+            
+            if (heightDelta != 0)
+            {
+                // Adjust padding based on which handle was used
+                var newTopPadding = _resizeStartTopPadding;
+                var newBottomPadding = _resizeStartBottomPadding;
+                
+                if (handle == ResizeHandle.Top || handle == ResizeHandle.TopLeft || handle == ResizeHandle.TopRight)
+                {
+                    // Adjust top padding
+                    newTopPadding = Math.Max(0, _resizeStartTopPadding + heightDelta);
+                }
+                else if (handle == ResizeHandle.Bottom || handle == ResizeHandle.BottomLeft || handle == ResizeHandle.BottomRight)
+                {
+                    // Adjust bottom padding
+                    newBottomPadding = Math.Max(0, _resizeStartBottomPadding + heightDelta);
+                }
+                
+                // Calculate text height to determine new bounds height
+                using (var tempBitmap = new Bitmap(1, 1))
+                using (var graphics = Graphics.FromImage(tempBitmap))
+                {
+                    var stringFormat = new System.Drawing.StringFormat(System.Drawing.StringFormatFlags.LineLimit);
+                    var textSize = graphics.MeasureString(textAnnotation.Text, textAnnotation.Font, int.MaxValue, stringFormat);
+                    stringFormat.Dispose();
+                    var textHeight = (int)textSize.Height;
+                    
+                    // Update padding
+                    textAnnotation.CustomTopPadding = newTopPadding;
+                    textAnnotation.CustomBottomPadding = newBottomPadding;
+                    
+                    // Update bounds height to match new padding
+                    var newHeight = textHeight + newTopPadding + newBottomPadding;
+                    var newY = textBounds.Top;
+                    
+                    // If resizing from top, adjust Y position to keep bottom edge fixed
+                    if (handle == ResizeHandle.Top || handle == ResizeHandle.TopLeft || handle == ResizeHandle.TopRight)
+                    {
+                        newY = textBounds.Bottom - newHeight;
+                    }
+                    
+                    annotation.Bounds = new System.Drawing.Rectangle(
+                        textBounds.Left,
+                        newY,
+                        textBounds.Width,
+                        newHeight);
+                }
+            }
             return;
         }
         
@@ -1724,4 +1878,5 @@ enum ResizeHandle
     BottomLeft,
     Left
 }
+
 

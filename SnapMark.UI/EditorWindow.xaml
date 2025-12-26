@@ -1,7 +1,7 @@
 <Window x:Class="SnapMark.UI.EditorWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-    <Grid>
+    <Grid KeyDown="EditorWindow_KeyDown">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
@@ -51,6 +51,16 @@
                         </Button.Foreground>
                     </Button>
                     <Button x:Name="SaveButton" Content="Save" Margin="5" Click="SaveButton_Click" FontSize="14" FontWeight="SemiBold">
+                        <Button.Foreground>
+                            <SolidColorBrush Color="#FFFFFF"/>
+                        </Button.Foreground>
+                    </Button>
+                    <Button x:Name="UndoButton" Content="Undo" Margin="5" Click="UndoButton_Click" FontSize="14" FontWeight="SemiBold" IsEnabled="False">
+                        <Button.Foreground>
+                            <SolidColorBrush Color="#FFFFFF"/>
+                        </Button.Foreground>
+                    </Button>
+                    <Button x:Name="RedoButton" Content="Redo" Margin="5" Click="RedoButton_Click" FontSize="14" FontWeight="SemiBold" IsEnabled="False">
                         <Button.Foreground>
                             <SolidColorBrush Color="#FFFFFF"/>
                         </Button.Foreground>
