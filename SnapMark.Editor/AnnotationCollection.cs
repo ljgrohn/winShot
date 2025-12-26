@@ -39,6 +39,22 @@ public class AnnotationCollection : Collection<IAnnotation>
         return null;
     }
 
+    public List<IAnnotation> HitTest(Rectangle rectangle)
+    {
+        var results = new List<IAnnotation>();
+        // Test from highest Z-order to lowest
+        for (int i = Count - 1; i >= 0; i--)
+        {
+            var annotation = this[i];
+            // Check if annotation's bounds intersect with or are contained in the selection rectangle
+            if (rectangle.IntersectsWith(annotation.Bounds) || rectangle.Contains(annotation.Bounds))
+            {
+                results.Add(annotation);
+            }
+        }
+        return results;
+    }
+
     public void BringToFront(IAnnotation annotation)
     {
         if (Remove(annotation))

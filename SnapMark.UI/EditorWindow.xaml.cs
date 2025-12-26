@@ -41,6 +41,11 @@ public sealed partial class EditorWindow : Window
     private IAnnotation? _moveStartAnnotation;
     private System.Drawing.Rectangle _moveStartBounds;
     
+    // Selection rectangle state (for drag-to-select)
+    private bool _isSelecting = false;
+    private Windows.Foundation.Point? _selectionStartPoint;
+    private Microsoft.UI.Xaml.Shapes.Rectangle? _selectionRectangle;
+    
     // Resize state
     private bool _isResizing = false;
     private ResizeHandle? _resizeHandle;
@@ -743,13 +748,10 @@ public sealed partial class EditorWindow : Window
                 return;
             }
             
-            // Clear selection if clicking on empty space
-            if (_annotations.SelectedAnnotation != null)
-            {
-                _annotations.ClearSelection();
-                UpdatePropertyPanel();
-                RedrawAnnotations();
-            }
+            // Start selection rectangle drag on empty space
+            _isSelecting = true;
+            _selectionStartPoint = point;
+            AnnotationCanvas.CapturePointer(e.Pointer);
             e.Handled = true;
             return;
         }
@@ -798,6 +800,38 @@ public sealed partial class EditorWindow : Window
             return;
         }
         
+        // Handle selection rectangle drawing
+        if (_isSelecting && _selectionStartPoint.HasValue)
+        {
+            var startX = Math.Min(_selectionStartPoint.Value.X, currentPoint.X);
+            var startY = Math.Min(_selectionStartPoint.Value.Y, currentPoint.Y);
+            var width = Math.Abs(currentPoint.X - _selectionStartPoint.Value.X);
+            var height = Math.Abs(currentPoint.Y - _selectionStartPoint.Value.Y);
+            
+            // Remove previous selection rectangle if exists
+            if (_selectionRectangle != null)
+            {
+                AnnotationCanvas.Children.Remove(_selectionRectangle);
+            }
+            
+            // Create new selection rectangle preview
+            _selectionRectangle = new Microsoft.UI.Xaml.Shapes.Rectangle
+            {
+                Width = width,
+                Height = height,
+                Stroke = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Blue),
+                StrokeThickness = 2,
+                StrokeDashArray = new Microsoft.UI.Xaml.Media.DoubleCollection { 4, 4 },
+                Fill = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(30, 0, 120, 215)) // Semi-transparent blue fill
+            };
+            Canvas.SetLeft(_selectionRectangle, startX);
+            Canvas.SetTop(_selectionRectangle, startY);
+            AnnotationCanvas.Children.Add(_selectionRectangle);
+            
+            e.Handled = true;
+            return;
+        }
+        
         // Handle moving - only start moving if pointer has moved significantly
         if (_moveStartPoint.HasValue && _moveStartAnnotation != null)
         {
@@ -840,6 +874,67 @@ public sealed partial class EditorWindow : Window
         {
             _isPanning = false;
             AnnotationCanvas.ReleasePointerCapture(e.Pointer);
+            e.Handled = true;
+            return;
+        }
+        
+        // Handle selection rectangle end
+        if (_isSelecting && _selectionStartPoint.HasValue)
+        {
+            var endPoint = e.GetCurrentPoint(AnnotationCanvas).Position;
+            
+            // Check if this was just a click (very small movement)
+            var deltaX = Math.Abs(endPoint.X - _selectionStartPoint.Value.X);
+            var deltaY = Math.Abs(endPoint.Y - _selectionStartPoint.Value.Y);
+            const double clickThreshold = 3.0;
+            
+            if (deltaX < clickThreshold && deltaY < clickThreshold)
+            {
+                // Just a click - clear selection
+                _annotations.ClearSelection();
+                UpdatePropertyPanel();
+            }
+            else
+            {
+                // Convert selection rectangle to drawing coordinates
+                var zoomFactor = ImageScrollViewer.ZoomFactor;
+                var startDrawingPoint = WinUIToDrawingPoint(_selectionStartPoint.Value);
+                var endDrawingPoint = WinUIToDrawingPoint(endPoint);
+                
+                var selectionRect = new System.Drawing.Rectangle(
+                    Math.Min(startDrawingPoint.X, endDrawingPoint.X),
+                    Math.Min(startDrawingPoint.Y, endDrawingPoint.Y),
+                    Math.Abs(endDrawingPoint.X - startDrawingPoint.X),
+                    Math.Abs(endDrawingPoint.Y - startDrawingPoint.Y));
+                
+                // Find all annotations within the selection rectangle
+                var selectedAnnotations = _annotations.HitTest(selectionRect);
+                
+                // Select the first annotation found (or clear selection if none)
+                if (selectedAnnotations.Count > 0)
+                {
+                    // Select the topmost annotation (first in list since HitTest returns from highest Z-order)
+                    _annotations.SelectAnnotation(selectedAnnotations[0]);
+                    UpdatePropertyPanel();
+                }
+                else
+                {
+                    _annotations.ClearSelection();
+                    UpdatePropertyPanel();
+                }
+            }
+            
+            // Clean up selection rectangle preview
+            if (_selectionRectangle != null)
+            {
+                AnnotationCanvas.Children.Remove(_selectionRectangle);
+                _selectionRectangle = null;
+            }
+            
+            _isSelecting = false;
+            _selectionStartPoint = null;
+            AnnotationCanvas.ReleasePointerCapture(e.Pointer);
+            RedrawAnnotations();
             e.Handled = true;
             return;
         }
@@ -1034,8 +1129,10 @@ public sealed partial class EditorWindow : Window
         
         var textBox = new TextBox
         {
-            PlaceholderText = "Enter annotation text...",
-            AcceptsReturn = false,
+            PlaceholderText = "Enter annotation text... (Press Enter for new line)",
+            AcceptsReturn = true,
+            TextWrapping = Microsoft.UI.Xaml.TextWrapping.Wrap,
+            MinHeight = 60,
             Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 0x1a, 0x1a, 0x1a)),
             Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.White),
             BorderBrush = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(255, 0x40, 0x40, 0x40))
@@ -1207,17 +1304,20 @@ public sealed partial class EditorWindow : Window
             AnnotationCanvas.Children.Add(rect);
         }
         
-        // Draw selection rectangle
+        // Draw selection rectangle - account for zoom level
+        var zoomFactor = ImageScrollViewer.ZoomFactor;
+        var topLeftWinUI = DrawingToWinUIPoint(new System.Drawing.Point(bounds.Left, bounds.Top));
+        
+        // Scale width and height by zoom factor to match the zoomed annotation
         var selectionRect = new Microsoft.UI.Xaml.Shapes.Rectangle
         {
-            Width = bounds.Width,
-            Height = bounds.Height,
+            Width = bounds.Width * zoomFactor,
+            Height = bounds.Height * zoomFactor,
             Stroke = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Blue),
             StrokeThickness = 2,
             StrokeDashArray = new Microsoft.UI.Xaml.Media.DoubleCollection { 4, 4 },
             Fill = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Transparent)
         };
-        var topLeftWinUI = DrawingToWinUIPoint(new System.Drawing.Point(bounds.Left, bounds.Top));
         Canvas.SetLeft(selectionRect, topLeftWinUI.X);
         Canvas.SetTop(selectionRect, topLeftWinUI.Y);
         AnnotationCanvas.Children.Add(selectionRect);
@@ -1367,18 +1467,23 @@ public sealed partial class EditorWindow : Window
         
         // Measure actual text size using Graphics (same method as UpdateBoundsFromText)
         // This ensures padding is calculated from actual text size, not bounds
+        // Handle multi-line text
         using var tempBitmap = new Bitmap(1, 1);
         using var graphics = Graphics.FromImage(tempBitmap);
-        var textSize = graphics.MeasureString(text.Text, text.Font);
+        var stringFormat = new System.Drawing.StringFormat(System.Drawing.StringFormatFlags.LineLimit);
+        var textSize = graphics.MeasureString(text.Text, text.Font, int.MaxValue, stringFormat);
+        stringFormat.Dispose();
         var textWidth = textSize.Width;
         var textHeight = textSize.Height;
         
-        // Calculate padding: 4% left/right, 3% top/bottom (based on actual text size)
-        var horizontalPadding = (int)(textWidth * 0.04);
+        // Calculate padding: 2-character buffer on left/right, 3% top/bottom
+        var twoCharSize = graphics.MeasureString("MM", text.Font);
+        var horizontalPadding = (int)twoCharSize.Width;
         var topPadding = (int)(textHeight * 0.03);
         var bottomPadding = topPadding; // Use same padding for bottom
         
-        // Create TextBlock with center alignment
+        // Create TextBlock with center alignment (supports multi-line)
+        // TextBlock will automatically fill the Border's content area (Border width - padding)
         var textBlock = new Microsoft.UI.Xaml.Controls.TextBlock
         {
             Text = text.Text,
@@ -1386,7 +1491,8 @@ public sealed partial class EditorWindow : Window
             FontSize = text.Font.Size,
             TextAlignment = Microsoft.UI.Xaml.TextAlignment.Center,
             VerticalAlignment = Microsoft.UI.Xaml.VerticalAlignment.Center,
-            HorizontalAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Center
+            HorizontalAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Center,
+            TextWrapping = Microsoft.UI.Xaml.TextWrapping.Wrap
         };
         
         // Wrap TextBlock in Border with rounded corners and padding

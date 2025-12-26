@@ -16,6 +16,22 @@ public sealed partial class MainWindow : Window
         this.AppWindow.Resize(new Windows.Graphics.SizeInt32(500, 400));
     }
 
+    private void RegionCaptureButton_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            StatusText.Text = "Select a region on screen...";
+            
+            // Use the App's existing region capture functionality
+            var app = (App)Application.Current;
+            app.StartRegionCapture();
+        }
+        catch (Exception ex)
+        {
+            StatusText.Text = $"Error: {ex.Message}";
+        }
+    }
+
     private void TestCaptureButton_Click(object sender, RoutedEventArgs e)
     {
         try

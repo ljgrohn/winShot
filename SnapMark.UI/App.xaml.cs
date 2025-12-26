@@ -144,8 +144,14 @@ public partial class App : Application
 
     private void OnRegionCaptureRequested()
     {
+        StartRegionCapture();
+    }
+
+    public void StartRegionCapture()
+    {
         try
         {
+            _regionSelector?.Dispose(); // Dispose previous if exists
             _regionSelector = new RegionSelector();
             _regionSelector.RegionSelected += OnRegionSelected;
             _regionSelector.StartSelection();

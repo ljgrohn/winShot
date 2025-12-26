@@ -17,13 +17,19 @@ public class TextAnnotation : AnnotationBase
 
     public override void Draw(Graphics graphics)
     {
-        // Calculate text size to determine padding
-        var textSize = graphics.MeasureString(Text, Font);
+        // Calculate text size to determine padding - handle multi-line text
+        var stringFormat = new StringFormat(StringFormatFlags.LineLimit)
+        {
+            Alignment = StringAlignment.Center,
+            LineAlignment = StringAlignment.Center
+        };
+        var textSize = graphics.MeasureString(Text, Font, int.MaxValue, stringFormat);
         var textWidth = textSize.Width;
         var textHeight = textSize.Height;
         
-        // Calculate padding: 4% left/right, 3% top/bottom
-        var horizontalPadding = (int)(textWidth * 0.04);
+        // Calculate padding: 2-character buffer on left/right, 3% top/bottom
+        var twoCharSize = graphics.MeasureString("MM", Font);
+        var horizontalPadding = (int)twoCharSize.Width;
         var topPadding = (int)(textHeight * 0.03);
         var bottomPadding = topPadding;
         
@@ -40,14 +46,10 @@ public class TextAnnotation : AnnotationBase
         var cornerRadius = 4;
         DrawRoundedRectangle(graphics, backgroundBrush, Bounds, cornerRadius);
         
-        // Draw text centered
+        // Draw text centered (supports multi-line)
         using var brush = new SolidBrush(Color);
-        using var stringFormat = new StringFormat
-        {
-            Alignment = StringAlignment.Center,
-            LineAlignment = StringAlignment.Center
-        };
         graphics.DrawString(Text, Font, brush, textRect, stringFormat);
+        stringFormat.Dispose();
 
         if (IsSelected)
         {
@@ -86,10 +88,15 @@ public class TextAnnotation : AnnotationBase
 
     public void UpdateBoundsFromText(Graphics graphics)
     {
-        var size = graphics.MeasureString(Text, Font);
-        // Calculate padding: 4% on left/right, 3% on top/bottom
-        // Padding is calculated from actual text size, then bounds = text size + padding
-        var horizontalPadding = (int)(size.Width * 0.04);
+        // Measure text size - handle multi-line text
+        var stringFormat = new StringFormat(StringFormatFlags.LineLimit);
+        var size = graphics.MeasureString(Text, Font, int.MaxValue, stringFormat);
+        stringFormat.Dispose();
+        
+        // Calculate padding: 2-character buffer on left/right, 3% on top/bottom
+        // Measure 2 characters (using "MM" as a reasonable width estimate)
+        var twoCharSize = graphics.MeasureString("MM", Font);
+        var horizontalPadding = (int)twoCharSize.Width;
         var topPadding = (int)(size.Height * 0.03);
         var bottomPadding = topPadding; // Use same padding for bottom
         
